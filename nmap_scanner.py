@@ -45,6 +45,16 @@ def get_conn():
         port=DB_PORT,
     )
 
+def upsert_agent_heartbeat(cur, agent: str) -> None:
+    cur.execute(
+        """
+        INSERT INTO public.agent_status (agent_name, last_heartbeat)
+        VALUES (%s, NOW())
+        ON CONFLICT (agent_name)
+        DO UPDATE SET last_heartbeat = NOW();
+        """,
+        (agent,),
+    )
 
 def parse_allowed_targets(raw: str) -> set[str]:
     return {t.strip() for t in raw.split(",") if t.strip()}
@@ -233,6 +243,10 @@ def main():
     try:
         with conn:
             with conn.cursor() as cur:
+
+                # 🔥 Update NMAP heartbeat
+                upsert_agent_heartbeat(cur, agent_name)
+                
                 inserted_rows: list[tuple[int, str, int, str, str, str | None]] = []
                 # (finding_id, host, port, proto, state, service)
 

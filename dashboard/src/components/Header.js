@@ -46,7 +46,7 @@ function Header({ lastUpdated }) {
           </NavLink>
 
           <NavLink to="/alerts" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            alerts
+            Alerts
           </NavLink>
 
         </nav>

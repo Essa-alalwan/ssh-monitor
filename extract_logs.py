@@ -505,7 +505,7 @@ def get_conn():
         dbname=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOST, port=DB_PORT
     )
 
-def upsert_heartbeat(conn) -> None:
+def upsert_agent_heartbeat(conn, agent: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -514,9 +514,18 @@ def upsert_heartbeat(conn) -> None:
             ON CONFLICT (agent_name)
             DO UPDATE SET last_heartbeat = NOW();
             """,
-            (AGENT_NAME,),
+            (agent,),
         )
-    conn.commit()
+
+def agent_for_path(path: str) -> str:
+    base = os.path.basename(path)
+    if base.startswith(AUTH_PREFIX):
+        return "SSH"
+    if base.startswith(ACCESS_PREFIX) or base.startswith(ERROR_PREFIX):
+        return "APACHE"
+    if base == VSFTPD_BASENAME:
+        return "FTP"
+    return AGENT_NAME
 
 def load_cursor(conn, path: str) -> CursorState:
     with conn.cursor() as cur:
@@ -568,8 +577,11 @@ def insert_log_row(
     message: str,
     agent_name: Optional[str] = None,
 ) -> Optional[int]:
-    # Allow per-source agent labels (FTP vs SSH vs Apache)
+
     agent = agent_name or AGENT_NAME
+
+    # 🔥 Update heartbeat for the actual agent inserting logs
+    upsert_agent_heartbeat(conn, agent)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -635,6 +647,7 @@ def ingest_file(conn, path: str) -> Tuple[int, int]:
     inserted = 0
     dropped = 0
     base = os.path.basename(path)
+    upsert_agent_heartbeat(conn, agent_for_path(path))# heartbeat even if no new lines are inserted
 
     try:
         with open(path, "r", errors="ignore") as f:
@@ -778,8 +791,6 @@ def trim_logs(conn) -> None:
 def main():
     conn = get_conn()
     try:
-        upsert_heartbeat(conn)
-
         watched = 0
         inserted_total = 0
         dropped_total = 0
